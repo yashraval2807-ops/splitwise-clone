@@ -1,0 +1,190 @@
+// Prisma Schema — Splitwise Clone
+// Source of truth for all DB models, relationships, and constraints.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum GroupType {
+  HOME
+  TRIP
+  COUPLE
+  OTHER
+}
+
+enum MemberRole {
+  ADMIN
+  MEMBER
+}
+
+enum SplitType {
+  EQUAL
+  UNEQUAL
+  PERCENTAGE
+  SHARES
+}
+
+// ─────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  groupMemberships GroupMember[]
+  expensesPaid     Expense[]       @relation("ExpensePayer")
+  expenseSplits    ExpenseSplit[]
+  settlementsPaid  Settlement[]    @relation("SettlementPayer")
+  settlementsRecv  Settlement[]    @relation("SettlementReceiver")
+  comments         Comment[]
+  createdGroups    Group[]         @relation("GroupCreator")
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// GROUP
+// ─────────────────────────────────────────────
+
+model Group {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  type        GroupType @default(OTHER)
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  creator     User          @relation("GroupCreator", fields: [createdById], references: [id])
+  members     GroupMember[]
+  expenses    Expense[]
+  settlements Settlement[]
+
+  @@map("groups")
+}
+
+// ─────────────────────────────────────────────
+// GROUP MEMBER (join table with role)
+// ─────────────────────────────────────────────
+
+model GroupMember {
+  id       String     @id @default(cuid())
+  groupId  String
+  userId   String
+  role     MemberRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
+
+  // Relations
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // A user can only be a member of a group once
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+// ─────────────────────────────────────────────
+// EXPENSE
+// ─────────────────────────────────────────────
+
+model Expense {
+  id        String    @id @default(cuid())
+  groupId   String
+  title     String
+  amount    Decimal   @db.Decimal(10, 2)
+  currency  String    @default("INR")
+  paidById  String
+  splitType SplitType
+  date      DateTime  @default(now())
+  notes     String?
+  isDeleted Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  group    Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy   User           @relation("ExpensePayer", fields: [paidById], references: [id])
+  splits   ExpenseSplit[]
+  comments Comment[]
+
+  @@map("expenses")
+}
+
+// ─────────────────────────────────────────────
+// EXPENSE SPLIT (one per participant per expense)
+// ─────────────────────────────────────────────
+
+model ExpenseSplit {
+  id         String   @id @default(cuid())
+  expenseId  String
+  userId     String
+  amount     Decimal  @db.Decimal(10, 2)
+  percentage Decimal? @db.Decimal(5, 2)  // stored for PERCENTAGE split type
+  shares     Int?                          // stored for SHARES split type
+
+  // Relations
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One split entry per user per expense
+  @@unique([expenseId, userId])
+  @@map("expense_splits")
+}
+
+// ─────────────────────────────────────────────
+// SETTLEMENT (records a manual payment)
+// ─────────────────────────────────────────────
+
+model Settlement {
+  id           String   @id @default(cuid())
+  groupId      String?
+  paidById     String
+  receivedById String
+  amount       Decimal  @db.Decimal(10, 2)
+  notes        String?
+  settledAt    DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  // Relations
+  group      Group? @relation(fields: [groupId], references: [id])
+  paidBy     User   @relation("SettlementPayer", fields: [paidById], references: [id])
+  receivedBy User   @relation("SettlementReceiver", fields: [receivedById], references: [id])
+
+  @@map("settlements")
+}
+
+// ─────────────────────────────────────────────
+// COMMENT (on an expense)
+// ─────────────────────────────────────────────
+
+model Comment {
+  id        String   @id @default(cuid())
+  expenseId String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
