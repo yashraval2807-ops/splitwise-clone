@@ -1,21 +1,7 @@
-# In splitwise-clone/ root
-cat > .gitignore << 'EOF'
-# Dependencies
 node_modules/
-
-# Environment files - NEVER commit these
 .env
 .env.local
 .env.production
-
-# Build output
 dist/
-build/
-
-# Prisma
-server/prisma/migrations/
-
-# OS
 .DS_Store
 Thumbs.db
-EOF
